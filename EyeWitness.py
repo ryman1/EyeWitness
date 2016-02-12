@@ -43,6 +43,8 @@ except ImportError:
     print '[*] Please run the script in the setup directory!'
     sys.exit()
 
+reload(sys)
+sys.setdefaultencoding('utf8')
 
 multi_counter = 0
 multi_total = 0
@@ -83,7 +85,7 @@ def create_cli_parser():
                             websites')
 
     timing_options = parser.add_argument_group('Timing Options')
-    timing_options.add_argument('-t', metavar='Timeout', default=7, type=int,
+    timing_options.add_argument('--timeout', metavar='Timeout', default=7, type=int,
                                 help='Maximum number of seconds to wait while\
                                  requesting a web page (Default: 7)')
     timing_options.add_argument('--jitter', metavar='# of Seconds', default=0,
@@ -124,6 +126,16 @@ def create_cli_parser():
     http_options.add_argument('--resolve', default=False,
                               action='store_true', help=("Resolve IP/Hostname"
                                                          " for targets"))
+    http_options.add_argument('--add-http-ports', default=[], 
+                              type=lambda s:[int(i) for i in s.split(",")],
+                              help=("Comma-seperated additional port(s) to assume "
+                              "are http (e.g. '8018,8028')"))
+    http_options.add_argument('--add-https-ports', default=[],
+                              type=lambda s:[int(i) for i in s.split(",")],
+                              help=("Comma-seperated additional port(s) to assume "
+                              "are https (e.g. '8018,8028')"))
+    http_options.add_argument('--prepend-https', default=False, action='store_true',
+                              help='Prepend http:\\\\ and https:\\\\ to URLs without either')
 
     resume_options = parser.add_argument_group('Resume Options')
     resume_options.add_argument('--resume', metavar='ew.db',
@@ -292,19 +304,19 @@ def worker_thread(cli_parsed, targets, lock, counter, user_agent=None):
             if user_agent is None:
                 http_object, driver = capture_host(
                     cli_parsed, http_object, driver)
-                if http_object.category is None:
+                if http_object.category is None and http_object.error_state is None:
                     http_object = default_creds_category(http_object)
                 manager.update_http_object(http_object)
             else:
                 ua_object, driver = capture_host(
                     cli_parsed, http_object, driver)
-                if http_object.category is None:
+                if http_object.category is None and http_object.error_state is None:
                     ua_object = default_creds_category(ua_object)
                 manager.update_ua_object(ua_object)
 
             counter[0].value += 1
             if counter[0].value % 15 == 0:
-                print '\x1b[32m[*] Completed {0} out of {1} hosts\x1b[0m'.format(counter[0].value, counter[1])
+                print '\x1b[32m[*] Completed {0} out of {1} services\x1b[0m'.format(counter[0].value, counter[1])
             do_jitter(cli_parsed)
     except KeyboardInterrupt:
         pass
@@ -479,7 +491,7 @@ def multi_mode(cli_parsed):
                         target.remote_system, int(target.port),
                         rdp_module.RDPScreenShotFactory(
                             reactor, app, 1200, 800,
-                            target.screenshot_path, cli_parsed.t,
+                            target.screenshot_path, cli_parsed.timeout,
                             target, tdbm))
             reactor.runReturn()
             app.exec_()
@@ -514,12 +526,14 @@ if __name__ == "__main__":
 
     if cli_parsed.resume:
         print '[*] Loading Resume Data...'
-        temp = cli_parsed.resume
+        temp = cli_parsed
         dbm = db_manager.DB_Manager(cli_parsed.resume)
         dbm.open_connection()
         cli_parsed = dbm.get_options()
-        cli_parsed.d = os.path.dirname(temp)
-        cli_parsed.resume = temp
+        cli_parsed.d = os.path.dirname(temp.resume)
+        cli_parsed.resume = temp.resume
+        if temp.results:
+            cli_parsed.results = temp.results
         dbm.close()
 
         print 'Loaded Resume Data with the following options:'
@@ -537,7 +551,7 @@ if __name__ == "__main__":
         print 'Engine(s): {0}'.format(','.join(engines))
         print 'Threads: {0}'.format(cli_parsed.threads)
         print 'Output Directory: {0}'.format(cli_parsed.d)
-        print 'Timeout: {0}'.format(cli_parsed.t)
+        print 'Timeout: {0}'.format(cli_parsed.timeout)
         print ''
     else:
         create_folders_css(cli_parsed)

@@ -152,7 +152,7 @@ def sort_data_and_write(cli_parsed, data):
                   ('dirlist', 'Directory Listings', 'dirlist'),
                   (None, 'Uncategorized', 'uncat'),
                   ('cms', 'Content Management System (CMS)', 'cms'),
-                  ('idrac', 'IDRAC/ILo', 'idrac'),
+                  ('idrac', 'IDRAC/ILo/Management Interfaces', 'idrac'),
                   ('nas', 'Network Attached Storage (NAS)', 'nas'),
                   ('netdev', 'Network Devices', 'netdev'),
                   ('voip', 'Voice/Video over IP (VoIP)', 'voip'),
@@ -160,6 +160,7 @@ def sort_data_and_write(cli_parsed, data):
                   ('notfound', '404 Not Found', 'notfound'),
                   ('crap', 'Splash Pages', 'crap'),
                   ('printer', 'Printers', 'printer'),
+                  ('infrastructure', 'Infrastructure', 'infrastructure'),
                   ]
     if total_results == 0:
         return
@@ -195,7 +196,7 @@ def sort_data_and_write(cli_parsed, data):
                 if pcount < len(grouped):
                     html += table_head
             counter += 1
-        if len(grouped) > 0 and counter % cli_parsed.results != 0:
+        if len(grouped) > 0 and counter - 1 % cli_parsed.results != 0:
             html += "</table><br>"
 
     # Add our errors here (at the very very end)
@@ -405,7 +406,7 @@ def search_report(cli_parsed, data, search_term):
         bottom_text += ("<a href=\"search.html\"> Page 1</a>")
         # Generate our header/footer data here
         for i in range(2, num_pages):
-            bottom_text += ("<a href=\"report_page{0}.html\"> Page {0}</a>").format(
+            bottom_text += ("<a href=\"search_page{0}.html\"> Page {0}</a>").format(
                 str(i))
         bottom_text += "</center>\n"
         top_text = bottom_text

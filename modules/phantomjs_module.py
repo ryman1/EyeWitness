@@ -52,7 +52,7 @@ def create_driver(cli_parsed, user_agent=None):
 
     # PhantomJS resource timeout
     capabilities[
-        'phantomjs.page.settings.resourceTimeout'] = cli_parsed.t * 1000
+        'phantomjs.page.settings.resourceTimeout'] = cli_parsed.timeout * 1000
     # Basic auth settings
     capabilities['phantomjs.page.settings.userName'] = 'none'
     capabilities['phantomjs.page.settings.password'] = 'none'
@@ -70,7 +70,7 @@ def create_driver(cli_parsed, user_agent=None):
                 service_log_path=log_path, executable_path=phantomjs_path)
             # This is the default size from the firefox driver
             driver.set_window_size(1200, 675)
-            driver.set_page_load_timeout(cli_parsed.t)
+            driver.set_page_load_timeout(cli_parsed.timeout)
             return driver
         except WebDriverException:
             # print 'WebDriverException, retrying'
@@ -94,7 +94,6 @@ def capture_host(cli_parsed, http_object, driver, ua=None):
     Returns:
         HTTPTableObject: Filled out HTTP Object
     """
-    tempua = driver.execute_script("return navigator.userAgent")
     try:
         driver.get(http_object.remote_system)
     except KeyboardInterrupt:
@@ -150,6 +149,10 @@ def capture_host(cli_parsed, http_object, driver, ua=None):
         pass
 
     try:
+        tempua = driver.execute_script("return navigator.userAgent")
+    except:
+        tempua = ''
+    try:
         req = urllib2.Request(http_object.remote_system, headers={'User-Agent': tempua})
         if context is None:
             opened = urllib2.urlopen(req)
@@ -184,13 +187,20 @@ def capture_host(cli_parsed, http_object, driver, ua=None):
             return http_object, driver
         else:
             headers = {'Error': 'HTTP Error...'}
+            http_object.error_state = 'BadStatus'
+            return http_object, driver
     except socket.error as e:
         if e.errno == 104:
             headers = {'Error': 'Connection Reset'}
             http_object.error_state = 'ConnReset'
             return http_object, driver
+        elif e.errno == 10054:
+            headers = {'Error': 'Connection Reset'}
+            http_object.error_state = 'ConnReset'
+            return http_object, driver
         else:
-            headers = {'Error': 'Potential timeout connecting to server'}
+            http_object.error_state = 'BadStatus'
+            return http_object, driver
     except httplib.BadStatusLine:
         http_object.error_state = 'BadStatus'
         return http_object, driver
@@ -201,17 +211,11 @@ def capture_host(cli_parsed, http_object, driver, ua=None):
     try:
         driver.save_screenshot(http_object.screenshot_path)
     except Exception as e:
-        print str(e)
+        print driver.remote_system
 
     try:
         http_object.page_title = 'Unknown' if driver.title == '' else driver.title.encode(
             'utf-8')
-        if '403 Forbidden' in http_object.page_title or '401 Unauthorized' in http_object.page_title:
-            http_object.category = 'unauth'
-        if 'Index of /' in http_object.page_title:
-            http_object.category = 'dirlist'
-        if '404 Not Found' in http_object.page_title:
-            http_object.category = 'notfound'
     except Exception:
         http_object.page_title = 'Unable to Display'
 

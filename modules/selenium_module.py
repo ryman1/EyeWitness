@@ -4,6 +4,7 @@ import socket
 import sys
 import urllib2
 import ssl
+import time
 
 try:
     from ssl import CertificateError as sslerr
@@ -60,10 +61,13 @@ def create_driver(cli_parsed, user_agent=None):
     profile.set_preference('app.update.enabled', False)
     profile.set_preference('browser.search.update', False)
     profile.set_preference('extensions.update.enabled', False)
+    profile.set_preference('capability.policy.default.Window.alert', 'noAccess');
+    profile.set_preference('capability.policy.default.Window.confirm', 'noAccess');
+    profile.set_preference('capability.policy.default.Window.prompt', 'noAccess');
 
     try:
         driver = webdriver.Firefox(profile)
-        driver.set_page_load_timeout(cli_parsed.t)
+        driver.set_page_load_timeout(cli_parsed.timeout)
         return driver
     except Exception as e:
         if 'Failed to find firefox binary' in str(e):
@@ -71,7 +75,7 @@ def create_driver(cli_parsed, user_agent=None):
             print 'You can fix this by installing Firefox/Iceweasel\
              or using phantomjs/ghost'
         else:
-            print 'Unknown Error when creating selenium driver. Exiting'
+            print e
         sys.exit()
 
 
@@ -88,7 +92,6 @@ def capture_host(cli_parsed, http_object, driver, ua=None):
     Returns:
         HTTPTableObject: Complete http_object
     """
-    tempua = driver.execute_script("return navigator.userAgent")
 
     # Attempt to take the screenshot
     try:
@@ -114,10 +117,9 @@ def capture_host(cli_parsed, http_object, driver, ua=None):
     # Dismiss any alerts present on the page
     # Will not work for basic auth dialogs!
     try:
-        alert = driver.switch_to_alert()
+        alert = driver.switch_to.alert
         alert.dismiss()
-        alert.accept()
-    except NoAlertPresentException:
+    except Exception as e:
         pass
 
     # If we hit a timeout earlier, retry once
@@ -147,12 +149,18 @@ def capture_host(cli_parsed, http_object, driver, ua=None):
             http_object.error_state = 'BadStatus'
             return http_object, driver
 
+        try:
+            alert = driver.switch_to.alert
+            alert.dismiss()
+        except Exception as e:
+            pass
+    # Save our screenshot to the specified directory
     try:
-        alert = driver.switch_to_alert()
-        alert.dismiss()
-        alert.accept()
-    except NoAlertPresentException:
-        pass
+        driver.save_screenshot(http_object.screenshot_path)
+    except WebDriverException as e:
+        print('[*] Error saving web page screenshot'
+              ' for ' + http_object.remote_system)
+    
 
     # Get our headers using urllib2
     context = None
@@ -164,6 +172,10 @@ def capture_host(cli_parsed, http_object, driver, ua=None):
         context = None
         pass
 
+    try:
+        tempua = driver.execute_script("return navigator.userAgent")
+    except:
+        tempua = ''
     try:
         req = urllib2.Request(http_object.remote_system, headers={'User-Agent': tempua})
         if context is None:
@@ -199,13 +211,20 @@ def capture_host(cli_parsed, http_object, driver, ua=None):
             return http_object, driver
         else:
             headers = {'Error': 'HTTP Error...'}
+            http_object.error_state = 'BadStatus'
+            return http_object, driver
     except socket.error as e:
         if e.errno == 104:
             headers = {'Error': 'Connection Reset'}
             http_object.error_state = 'ConnReset'
             return http_object, driver
+        elif e.errno == 10054:
+            headers = {'Error': 'Connection Reset'}
+            http_object.error_state = 'ConnReset'
+            return http_object, driver
         else:
-            headers = {'Error': 'Potential timeout connecting to server'}
+            http_object.error_state = 'BadStatus'
+            return http_object, driver
     except httplib.BadStatusLine:
         http_object.error_state = 'BadStatus'
         return http_object, driver
@@ -213,29 +232,15 @@ def capture_host(cli_parsed, http_object, driver, ua=None):
         headers = {'Error': 'Invalid SSL Certificate'}
         http_object.ssl_error = True
 
-    # Save our screenshot to the specified directory
-    try:
-        driver.save_screenshot(http_object.screenshot_path)
-    except WebDriverException:
-        print('[*] Error saving web page screenshot'
-              ' for ' + http_object.remote_system)
-
     try:
         http_object.page_title = 'Unknown' if driver.title == '' else driver.title.encode(
             'utf-8')
-        if '403 Forbidden' in http_object.page_title or '401 Unauthorized' in http_object.page_title:
-            http_object.category = 'unauth'
-        if 'Index of /' in http_object.page_title:
-            http_object.category = 'dirlist'
-        if '404 Not Found' in http_object.page_title:
-            http_object.category = 'notfound'
     except Exception:
         http_object.page_title = 'Unable to Display'
     # Save page source to the object and to a file. Also set the title in the object
     try:
         http_object.headers = headers
         http_object.source_code = driver.page_source.encode('utf-8')
-
         with open(http_object.source_path, 'w') as f:
             f.write(http_object.source_code)
     except UnexpectedAlertPresentException:
